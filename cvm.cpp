@@ -8,22 +8,18 @@
 
 using namespace std;
 
-// ==========================================
-// 1. ARCHITECTURE & OPCODES
-// ==========================================
+
 enum OpCode {
     OP_PUSH,        
     OP_ADD, OP_SUB, OP_MUL, OP_DIV,
-    OP_EQUAL, OP_LESS,    // Relational
-    OP_PRINT, OP_INPUT,   // I/O
+    OP_EQUAL, OP_LESS,    
+    OP_PRINT, OP_INPUT,   
     OP_SET_VAR, OP_GET_VAR,
-    OP_JUMP_IF_FALSE, OP_JUMP, // Control Flow
+    OP_JUMP_IF_FALSE, OP_JUMP, 
     OP_HALT
 };
 
-// ==========================================
-// 2. LEXER (Scanner)
-// ==========================================
+
 enum TokenType { 
     T_NUM, T_ID, T_LET, T_PRINT, T_INPUT,
     T_TRUE, T_FALSE, T_IF, T_ELSE, T_WHILE,
@@ -100,7 +96,7 @@ public:
 
 // ==========================================
 // 3. ABSTRACT SYNTAX TREE (AST)
-// ==========================================
+// ==========================================   
 struct ASTNode { 
     virtual void print(int indent) = 0;
     virtual ~ASTNode() = default; 
@@ -198,9 +194,7 @@ struct ProgramNode : public ASTNode {
     }
 };
 
-// ==========================================
-// 4. PARSER
-// ==========================================
+
 class Parser {
     Lexer lexer; Token current;
     void advance() { current = lexer.nextToken(); }
@@ -307,9 +301,7 @@ public:
     }
 };
 
-// ==========================================
-// 5. COMPILER 
-// ==========================================
+
 class Compiler {
     unordered_map<string, int> varMap;
     int varCount = 0;
@@ -379,9 +371,7 @@ public:
     }
 };
 
-// ==========================================
-// 6. VIRTUAL MACHINE
-// ==========================================
+
 class VM {
     vector<int> bytecode;
     int stack[256];
@@ -420,15 +410,12 @@ public:
     }
 };
 
-// ==========================================
-// 7. CLI RUNNER
-// ==========================================
+
 int main(int argc, char* argv[]) {
     bool showAst = false;
     bool showBytecode = false;
     string filename = "";
 
-    // Parse command-line arguments safely
     for (int i = 1; i < argc; i++) {
         string arg = argv[i];
         if (arg == "--show-ast") showAst = true;
