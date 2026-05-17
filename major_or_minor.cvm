@@ -1,0 +1,12 @@
+let current_year = 2026;
+let birth_year = input;
+
+let age = current_year - birth_year;
+
+print age;
+
+if (age < 18) {
+    print 0; 
+} else {
+    print 1; 
+}

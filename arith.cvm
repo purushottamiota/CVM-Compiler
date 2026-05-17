@@ -1,0 +1,9 @@
+let n1 = 10;
+let n2 = 5;
+let n3 = 2;
+
+let result = (n1 * n2) - n3;
+let final = result / n3;
+
+print result;
+print final;

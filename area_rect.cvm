@@ -1,0 +1,8 @@
+let length = input;
+let width = input;
+
+let area = length * width;
+let perimeter = (length + width) * 2;
+
+print area;
+print perimeter;

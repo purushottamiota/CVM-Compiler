@@ -1,0 +1,8 @@
+let zero = 0;
+let answer = 42;
+
+let negative = zero - answer;
+let identity = answer / 1;
+
+print negative;
+print identity;

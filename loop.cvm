@@ -1,0 +1,11 @@
+let loop_limit = input;
+let current_count = 0;
+let running_total = 0;
+
+while (current_count < loop_limit) {
+    let next_value = input;
+    running_total = running_total + next_value;
+    current_count = current_count + 1;
+}
+
+print running_total;
