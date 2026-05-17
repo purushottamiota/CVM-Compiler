@@ -8,7 +8,7 @@
 
 using namespace std;
 
-
+// Assigning OPCode standard names to identify operations easily
 enum OpCode {
     OP_PUSH,        
     OP_ADD, OP_SUB, OP_MUL, OP_DIV,
@@ -19,7 +19,7 @@ enum OpCode {
     OP_HALT
 };
 
-
+// Assigning Token Type standard names to identify tokens easily
 enum TokenType { 
     T_NUM, T_ID, T_LET, T_PRINT, T_INPUT,
     T_TRUE, T_FALSE, T_IF, T_ELSE, T_WHILE,
@@ -28,12 +28,15 @@ enum TokenType {
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_SEMI, T_EOF, T_ERR 
 };
 
+
+// Creating a struct to hold token information
 struct Token {
     TokenType type;
     int value; 
     string text;
 };
 
+// Creating a class to tokenize the input script
 class Lexer {
     string source;
     size_t pos = 0;
@@ -94,30 +97,33 @@ public:
     }
 };
 
-// ==========================================
-// 3. ABSTRACT SYNTAX TREE (AST)
-// ==========================================   
+//  Creating a structure to hold ASTNode information
 struct ASTNode { 
     virtual void print(int indent) = 0;
     virtual ~ASTNode() = default; 
 };
 
+// Creating derived classes for different types of ASTNodes
+// NumNode for numbers
 struct NumNode : public ASTNode { 
     int value; 
     NumNode(int v) : value(v) {} 
     void print(int indent) override { cout << string(indent, ' ') << "Num(" << value << ")\n"; }
 };
 
+// VarNode for variables
 struct VarNode : public ASTNode { 
     string name; 
     VarNode(string n) : name(n) {} 
     void print(int indent) override { cout << string(indent, ' ') << "VarLoad(" << name << ")\n"; }
 };
 
+// InputNode for input
 struct InputNode : public ASTNode {
     void print(int indent) override { cout << string(indent, ' ') << "Input()\n"; }
 };
 
+// BinOpNode for binary operations
 struct BinOpNode : public ASTNode {
     string op; shared_ptr<ASTNode> left, right;
     BinOpNode(string o, shared_ptr<ASTNode> l, shared_ptr<ASTNode> r) : op(o), left(l), right(r) {}
@@ -128,6 +134,7 @@ struct BinOpNode : public ASTNode {
     }
 };
 
+// AssignNode for assignment
 struct AssignNode : public ASTNode {
     string name; shared_ptr<ASTNode> expr;
     AssignNode(string n, shared_ptr<ASTNode> e) : name(n), expr(e) {}
@@ -137,6 +144,7 @@ struct AssignNode : public ASTNode {
     }
 };
 
+// PrintNode for print
 struct PrintNode : public ASTNode {
     shared_ptr<ASTNode> expr; 
     PrintNode(shared_ptr<ASTNode> e) : expr(e) {}
@@ -146,6 +154,7 @@ struct PrintNode : public ASTNode {
     }
 };
 
+// BlockNode for block
 struct BlockNode : public ASTNode {
     vector<shared_ptr<ASTNode>> statements;
     void print(int indent) override {
@@ -154,6 +163,7 @@ struct BlockNode : public ASTNode {
     }
 };
 
+// IfNode for if
 struct IfNode : public ASTNode {
     shared_ptr<ASTNode> condition, thenBranch, elseBranch;
     IfNode(shared_ptr<ASTNode> c, shared_ptr<ASTNode> t, shared_ptr<ASTNode> e) 
@@ -172,6 +182,7 @@ struct IfNode : public ASTNode {
     }
 };
 
+// WhileNode for while loops
 struct WhileNode : public ASTNode {
     shared_ptr<ASTNode> condition, body;
     WhileNode(shared_ptr<ASTNode> c, shared_ptr<ASTNode> b) : condition(c), body(b) {}
@@ -185,6 +196,8 @@ struct WhileNode : public ASTNode {
     }
 };
 
+
+// ProgramNode for program
 struct ProgramNode : public ASTNode { 
     vector<shared_ptr<ASTNode>> statements; 
     void print(int indent) override {
@@ -194,7 +207,7 @@ struct ProgramNode : public ASTNode {
     }
 };
 
-
+// Parser class to parse the input script
 class Parser {
     Lexer lexer; Token current;
     void advance() { current = lexer.nextToken(); }
@@ -301,7 +314,7 @@ public:
     }
 };
 
-
+// Compiler class to compile the AST to bytecode
 class Compiler {
     unordered_map<string, int> varMap;
     int varCount = 0;
@@ -371,7 +384,7 @@ public:
     }
 };
 
-
+// VM class to execute the bytecode
 class VM {
     vector<int> bytecode;
     int stack[256];
@@ -410,7 +423,7 @@ public:
     }
 };
 
-
+// Main function 
 int main(int argc, char* argv[]) {
     bool showAst = false;
     bool showBytecode = false;
@@ -424,12 +437,12 @@ int main(int argc, char* argv[]) {
     }
 
     if (filename.empty()) {
-        cout << "Usage: ./cvm [--show-ast] [--show-bytecode] <script.cvm>\n"; 
+        cout << "Required file name ./cvm [--show-ast] [--show-bytecode] <script.cvm>\n"; 
         return 1;
     }
 
     ifstream file(filename);
-    if (!file.is_open()) { cerr << "Error opening file: " << filename << "\n"; return 1; }
+    if (!file.is_open()) { cerr << "Error in opening file: " << filename << "\n"; return 1; }
     string sourceCode((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
 
     // 1. Parsing Phase
@@ -445,7 +458,7 @@ int main(int argc, char* argv[]) {
     compiler.compile(ast);
 
     if (showBytecode) {
-        cout << "--- Compiled Bytecode (Raw Array) ---\n";
+        cout << "--- Printing Compiled Bytecode ---\n";
         for (size_t i = 0; i < compiler.bytecode.size(); i++) {
             cout << compiler.bytecode[i] << " ";
         }
