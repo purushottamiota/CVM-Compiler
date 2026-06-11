@@ -5,6 +5,8 @@
 #include <cctype>
 #include <unordered_map>
 #include <fstream>
+#include <chrono>
+#include <stdexcept>
 
 using namespace std;
 
@@ -28,25 +30,29 @@ enum TokenType {
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_SEMI, T_EOF, T_ERR 
 };
 
-
 // Creating a struct to hold token information
 struct Token {
     TokenType type;
     int value; 
     string text;
+    int line; // Added line number for error reporting
 };
 
 // Creating a class to tokenize the input script
 class Lexer {
     string source;
     size_t pos = 0;
+    int currentLine = 1;
 
 public:
     Lexer(string src) : source(src) {}
 
     Token nextToken() {
-        while (pos < source.length() && isspace(source[pos])) pos++;
-        if (pos >= source.length()) return {T_EOF, 0, ""};
+        while (pos < source.length() && isspace(source[pos])) {
+            if (source[pos] == '\n') currentLine++;
+            pos++;
+        }
+        if (pos >= source.length()) return {T_EOF, 0, "", currentLine};
 
         char c = source[pos];
 
@@ -56,7 +62,7 @@ public:
                 val = val * 10 + (source[pos] - '0');
                 pos++;
             }
-            return {T_NUM, val, ""};
+            return {T_NUM, val, "", currentLine};
         }
 
         if (isalpha(c) || c == '_') {
@@ -64,35 +70,35 @@ public:
             while (pos < source.length() && (isalnum(source[pos]) || source[pos] == '_')) {
                 word += source[pos++];
             }
-            if (word == "let") return {T_LET, 0, word};
-            if (word == "print") return {T_PRINT, 0, word};
-            if (word == "input") return {T_INPUT, 0, word};
-            if (word == "true") return {T_TRUE, 1, word};
-            if (word == "false") return {T_FALSE, 0, word};
-            if (word == "if") return {T_IF, 0, word};
-            if (word == "else") return {T_ELSE, 0, word};
-            if (word == "while") return {T_WHILE, 0, word};
-            return {T_ID, 0, word};
+            if (word == "let") return {T_LET, 0, word, currentLine};
+            if (word == "print") return {T_PRINT, 0, word, currentLine};
+            if (word == "input") return {T_INPUT, 0, word, currentLine};
+            if (word == "true") return {T_TRUE, 1, word, currentLine};
+            if (word == "false") return {T_FALSE, 0, word, currentLine};
+            if (word == "if") return {T_IF, 0, word, currentLine};
+            if (word == "else") return {T_ELSE, 0, word, currentLine};
+            if (word == "while") return {T_WHILE, 0, word, currentLine};
+            return {T_ID, 0, word, currentLine};
         }
 
         pos++;
         switch (c) {
-            case '+': return {T_PLUS, 0, "+"};
-            case '-': return {T_MINUS, 0, "-"};
-            case '*': return {T_MUL, 0, "*"};
-            case '/': return {T_DIV, 0, "/"};
-            case '<': return {T_LESS, 0, "<"};
+            case '+': return {T_PLUS, 0, "+", currentLine};
+            case '-': return {T_MINUS, 0, "-", currentLine};
+            case '*': return {T_MUL, 0, "*", currentLine};
+            case '/': return {T_DIV, 0, "/", currentLine};
+            case '<': return {T_LESS, 0, "<", currentLine};
             case '=': 
                 if (pos < source.length() && source[pos] == '=') {
-                    pos++; return {T_EQEQ, 0, "=="};
+                    pos++; return {T_EQEQ, 0, "==", currentLine};
                 }
-                return {T_ASSIGN, 0, "="};
-            case '(': return {T_LPAREN, 0, "("};
-            case ')': return {T_RPAREN, 0, ")"};
-            case '{': return {T_LBRACE, 0, "{"};
-            case '}': return {T_RBRACE, 0, "}"};
-            case ';': return {T_SEMI, 0, ";"};
-            default: return {T_ERR, 0, string(1, c)};
+                return {T_ASSIGN, 0, "=", currentLine};
+            case '(': return {T_LPAREN, 0, "(", currentLine};
+            case ')': return {T_RPAREN, 0, ")", currentLine};
+            case '{': return {T_LBRACE, 0, "{", currentLine};
+            case '}': return {T_RBRACE, 0, "}", currentLine};
+            case ';': return {T_SEMI, 0, ";", currentLine};
+            default: return {T_ERR, 0, string(1, c), currentLine};
         }
     }
 };
@@ -104,26 +110,22 @@ struct ASTNode {
 };
 
 // Creating derived classes for different types of ASTNodes
-// NumNode for numbers
 struct NumNode : public ASTNode { 
     int value; 
     NumNode(int v) : value(v) {} 
     void print(int indent) override { cout << string(indent, ' ') << "Num(" << value << ")\n"; }
 };
 
-// VarNode for variables
 struct VarNode : public ASTNode { 
     string name; 
     VarNode(string n) : name(n) {} 
     void print(int indent) override { cout << string(indent, ' ') << "VarLoad(" << name << ")\n"; }
 };
 
-// InputNode for input
 struct InputNode : public ASTNode {
     void print(int indent) override { cout << string(indent, ' ') << "Input()\n"; }
 };
 
-// BinOpNode for binary operations
 struct BinOpNode : public ASTNode {
     string op; shared_ptr<ASTNode> left, right;
     BinOpNode(string o, shared_ptr<ASTNode> l, shared_ptr<ASTNode> r) : op(o), left(l), right(r) {}
@@ -134,7 +136,6 @@ struct BinOpNode : public ASTNode {
     }
 };
 
-// AssignNode for assignment
 struct AssignNode : public ASTNode {
     string name; shared_ptr<ASTNode> expr;
     AssignNode(string n, shared_ptr<ASTNode> e) : name(n), expr(e) {}
@@ -144,7 +145,6 @@ struct AssignNode : public ASTNode {
     }
 };
 
-// PrintNode for print
 struct PrintNode : public ASTNode {
     shared_ptr<ASTNode> expr; 
     PrintNode(shared_ptr<ASTNode> e) : expr(e) {}
@@ -154,7 +154,6 @@ struct PrintNode : public ASTNode {
     }
 };
 
-// BlockNode for block
 struct BlockNode : public ASTNode {
     vector<shared_ptr<ASTNode>> statements;
     void print(int indent) override {
@@ -163,7 +162,6 @@ struct BlockNode : public ASTNode {
     }
 };
 
-// IfNode for if
 struct IfNode : public ASTNode {
     shared_ptr<ASTNode> condition, thenBranch, elseBranch;
     IfNode(shared_ptr<ASTNode> c, shared_ptr<ASTNode> t, shared_ptr<ASTNode> e) 
@@ -182,7 +180,6 @@ struct IfNode : public ASTNode {
     }
 };
 
-// WhileNode for while loops
 struct WhileNode : public ASTNode {
     shared_ptr<ASTNode> condition, body;
     WhileNode(shared_ptr<ASTNode> c, shared_ptr<ASTNode> b) : condition(c), body(b) {}
@@ -196,8 +193,6 @@ struct WhileNode : public ASTNode {
     }
 };
 
-
-// ProgramNode for program
 struct ProgramNode : public ASTNode { 
     vector<shared_ptr<ASTNode>> statements; 
     void print(int indent) override {
@@ -207,13 +202,14 @@ struct ProgramNode : public ASTNode {
     }
 };
 
-// Parser class to parse the input script
 class Parser {
     Lexer lexer; Token current;
     void advance() { current = lexer.nextToken(); }
     void consume(TokenType type, string errMsg) {
         if (current.type == type) advance();
-        else { cerr << "Parse Error: " << errMsg << " (Found: " << current.text << ")\n"; exit(1); }
+        else { 
+            throw runtime_error("Parse Error: " + errMsg + " at line " + to_string(current.line) + " (Found: '" + current.text + "')");
+        }
     }
 
 public:
@@ -235,6 +231,7 @@ public:
             advance(); auto node = parseExpression();
             consume(T_RPAREN, "Expected ')'"); return node;
         }
+        throw runtime_error("Parse Error: Unexpected token at line " + to_string(current.line) + " (Found: '" + current.text + "')");
         return nullptr;
     }
 
@@ -304,6 +301,7 @@ public:
              consume(T_ASSIGN, "Expected '='"); auto expr = parseExpression();
              consume(T_SEMI, "Expected ';'"); return make_shared<AssignNode>(varName, expr);
         }
+        throw runtime_error("Parse Error: Invalid statement at line " + to_string(current.line) + " (Found: '" + current.text + "')");
         return nullptr;
     }
 
@@ -314,7 +312,6 @@ public:
     }
 };
 
-// Compiler class to compile the AST to bytecode
 class Compiler {
     unordered_map<string, int> varMap;
     int varCount = 0;
@@ -327,6 +324,9 @@ public:
             bytecode.push_back(OP_PUSH); bytecode.push_back(n->value);
         } 
         else if (auto v = dynamic_pointer_cast<VarNode>(node)) {
+            if (varMap.find(v->name) == varMap.end()) {
+                throw runtime_error("Compile Error: Usage of undefined variable '" + v->name + "'");
+            }
             bytecode.push_back(OP_GET_VAR); bytecode.push_back(varMap[v->name]);
         }
         else if (dynamic_pointer_cast<InputNode>(node)) {
@@ -343,7 +343,10 @@ public:
         } 
         else if (auto a = dynamic_pointer_cast<AssignNode>(node)) {
             compile(a->expr);
-            if (varMap.find(a->name) == varMap.end()) varMap[a->name] = varCount++;
+            if (varMap.find(a->name) == varMap.end()) {
+                if (varCount >= 256) throw runtime_error("Compile Error: Maximum variable limit (256) exceeded");
+                varMap[a->name] = varCount++;
+            }
             bytecode.push_back(OP_SET_VAR); bytecode.push_back(varMap[a->name]);
         }
         else if (auto p = dynamic_pointer_cast<PrintNode>(node)) {
@@ -384,15 +387,20 @@ public:
     }
 };
 
-// VM class to execute the bytecode
 class VM {
     vector<int> bytecode;
     int stack[256];
     int* stackTop;
     int globals[256];
 
-    void push(int val) { *stackTop++ = val; }
-    int pop() { return *(--stackTop); }
+    void push(int val) { 
+        if (stackTop - stack >= 256) throw runtime_error("VM Error: Stack Overflow");
+        *stackTop++ = val; 
+    }
+    int pop() { 
+        if (stackTop <= stack) throw runtime_error("VM Error: Stack Underflow");
+        return *(--stackTop); 
+    }
 
 public:
     VM(vector<int> code) : bytecode(code) { stackTop = stack; }
@@ -406,7 +414,13 @@ public:
                 case OP_ADD: { int b = pop(); int a = pop(); push(a + b); break; }
                 case OP_SUB: { int b = pop(); int a = pop(); push(a - b); break; }
                 case OP_MUL: { int b = pop(); int a = pop(); push(a * b); break; }
-                case OP_DIV: { int b = pop(); int a = pop(); push(a / b); break; }
+                case OP_DIV: { 
+                    int b = pop(); 
+                    int a = pop(); 
+                    if (b == 0) throw runtime_error("VM Error: Division by zero");
+                    push(a / b); 
+                    break; 
+                }
                 case OP_EQUAL: { int b = pop(); int a = pop(); push(a == b ? 1 : 0); break; }
                 case OP_LESS: { int b = pop(); int a = pop(); push(a < b ? 1 : 0); break; }
                 case OP_SET_VAR: globals[bytecode[ip++]] = pop(); break;
@@ -423,7 +437,6 @@ public:
     }
 };
 
-// Main function 
 int main(int argc, char* argv[]) {
     bool showAst = false;
     bool showBytecode = false;
@@ -437,7 +450,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (filename.empty()) {
-        cout << "Required file name ./cvm [--show-ast] [--show-bytecode] <script.cvm>\n"; 
+        cout << "Required file name ./cvm_safe [--show-ast] [--show-bytecode] <script.cvm>\n"; 
         return 1;
     }
 
@@ -445,29 +458,45 @@ int main(int argc, char* argv[]) {
     if (!file.is_open()) { cerr << "Error in opening file: " << filename << "\n"; return 1; }
     string sourceCode((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
 
-    // 1. Parsing Phase
-    Parser parser(sourceCode);
-    auto ast = parser.parseProgram();
-    
-    if (showAst) {
-        ast->print(0);
-    }
-
-    // 2. Compilation Phase
-    Compiler compiler;
-    compiler.compile(ast);
-
-    if (showBytecode) {
-        cout << "--- Printing Compiled Bytecode ---\n";
-        for (size_t i = 0; i < compiler.bytecode.size(); i++) {
-            cout << compiler.bytecode[i] << " ";
+    try {
+        // 1. Parsing Phase
+        Parser parser(sourceCode);
+        auto ast = parser.parseProgram();
+        
+        if (showAst) {
+            ast->print(0);
         }
-        cout << "\n-------------------------------------\n";
-    }
 
-    // 3. Execution Phase
-    VM vm(compiler.bytecode);
-    vm.run();
+        // 2. Compilation Phase
+        auto startCompile = chrono::high_resolution_clock::now();
+        Compiler compiler;
+        compiler.compile(ast);
+
+        if (showBytecode) {
+            cout << "--- Printing Compiled Bytecode ---\n";
+            for (size_t i = 0; i < compiler.bytecode.size(); i++) {
+                cout << compiler.bytecode[i] << " ";
+            }
+            cout << "\n-------------------------------------\n";
+        }
+
+        auto endCompile = chrono::high_resolution_clock::now();
+        auto compileTime = chrono::duration_cast<chrono::microseconds>(endCompile - startCompile).count();
+        cout << "[Metrics] Compilation Time: " << compileTime << " microseconds\n";
+
+        // 3. Execution Phase
+        VM vm(compiler.bytecode);
+        auto startVM = chrono::high_resolution_clock::now();
+        vm.run();
+        auto endVM = chrono::high_resolution_clock::now();
+        
+        auto vmTime = chrono::duration_cast<chrono::microseconds>(endVM - startVM).count();
+        cout << "[Metrics] Execution Time: " << vmTime << " microseconds\n";
+
+    } catch (const exception& e) {
+        cerr << "\n[Execution Halted] " << e.what() << "\n";
+        return 1;
+    }
 
     return 0;
 }
