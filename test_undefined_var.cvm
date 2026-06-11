@@ -1,0 +1,3 @@
+let score = 50;
+let bonus = 10;
+print score + bonus + multiplier;
