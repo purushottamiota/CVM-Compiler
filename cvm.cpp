@@ -18,6 +18,7 @@ enum OpCode {
     OP_PRINT, OP_INPUT,   
     OP_SET_VAR, OP_GET_VAR,
     OP_JUMP_IF_FALSE, OP_JUMP, 
+    OP_NEG,
     OP_HALT
 };
 
@@ -126,6 +127,15 @@ struct InputNode : public ASTNode {
     void print(int indent) override { std::cout << std::string(indent, ' ') << "Input()\n"; }
 };
 
+struct UnaryOpNode : public ASTNode {
+    char op; std::unique_ptr<ASTNode> expr;
+    UnaryOpNode(char o, std::unique_ptr<ASTNode> e) : op(o), expr(std::move(e)) {}
+    void print(int indent) override {
+        std::cout << std::string(indent, ' ') << "UnaryOp(" << op << ")\n";
+        expr->print(indent + 2);
+    }
+};
+
 struct BinOpNode : public ASTNode {
     std::string_view op; std::unique_ptr<ASTNode> left, right;
     BinOpNode(std::string_view o, std::unique_ptr<ASTNode> l, std::unique_ptr<ASTNode> r) : op(o), left(std::move(l)), right(std::move(r)) {}
@@ -223,11 +233,18 @@ public:
         throw std::runtime_error("Parse Error: Unexpected token at line " + std::to_string(current.line));
     }
 
+    std::unique_ptr<ASTNode> parseUnary() {
+        if (current.type == T_MINUS) {
+            advance(); return std::make_unique<UnaryOpNode>('-', parseUnary());
+        }
+        return parseFactor();
+    }
+
     std::unique_ptr<ASTNode> parseTerm() {
-        auto left = parseFactor();
+        auto left = parseUnary();
         while (current.type == T_MUL || current.type == T_DIV) {
             std::string_view op = (current.type == T_MUL) ? "*" : "/";
-            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseFactor());
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseUnary());
         }
         return left;
     }
@@ -320,6 +337,10 @@ public:
         else if (dynamic_cast<const InputNode*>(node)) {
             bytecode.push_back(OP_INPUT);
         }
+        else if (auto u = dynamic_cast<const UnaryOpNode*>(node)) {
+            compile(u->expr.get());
+            if (u->op == '-') bytecode.push_back(OP_NEG);
+        }
         else if (auto b = dynamic_cast<const BinOpNode*>(node)) {
             compile(b->left.get()); compile(b->right.get());
             if (b->op == "+") bytecode.push_back(OP_ADD);
@@ -396,7 +417,8 @@ public:
         static void* dispatch_table[] = {
             &&do_OP_PUSH, &&do_OP_ADD, &&do_OP_SUB, &&do_OP_MUL, &&do_OP_DIV,
             &&do_OP_EQUAL, &&do_OP_LESS, &&do_OP_PRINT, &&do_OP_INPUT,
-            &&do_OP_SET_VAR, &&do_OP_GET_VAR, &&do_OP_JUMP_IF_FALSE, &&do_OP_JUMP, &&do_OP_HALT
+            &&do_OP_SET_VAR, &&do_OP_GET_VAR, &&do_OP_JUMP_IF_FALSE, &&do_OP_JUMP,
+            &&do_OP_NEG, &&do_OP_HALT
         };
 
         #define DISPATCH() goto *dispatch_table[bytecode[ip++]]
@@ -438,6 +460,8 @@ public:
     }
     do_OP_PRINT:
         std::cout << "> " << pop() << std::endl; DISPATCH();
+    do_OP_NEG:
+        stack[stackTopIdx - 1] = -stack[stackTopIdx - 1]; DISPATCH();
     do_OP_HALT:
         return;
     }
