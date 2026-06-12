@@ -127,8 +127,8 @@ struct InputNode : public ASTNode {
 };
 
 struct BinOpNode : public ASTNode {
-    std::string_view op; std::shared_ptr<ASTNode> left, right;
-    BinOpNode(std::string_view o, std::shared_ptr<ASTNode> l, std::shared_ptr<ASTNode> r) : op(o), left(l), right(r) {}
+    std::string_view op; std::unique_ptr<ASTNode> left, right;
+    BinOpNode(std::string_view o, std::unique_ptr<ASTNode> l, std::unique_ptr<ASTNode> r) : op(o), left(std::move(l)), right(std::move(r)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "BinOp(" << std::string(op) << ")\n";
         left->print(indent + 2);
@@ -137,8 +137,8 @@ struct BinOpNode : public ASTNode {
 };
 
 struct AssignNode : public ASTNode {
-    std::string_view name; std::shared_ptr<ASTNode> expr;
-    AssignNode(std::string_view n, std::shared_ptr<ASTNode> e) : name(n), expr(e) {}
+    std::string_view name; std::unique_ptr<ASTNode> expr;
+    AssignNode(std::string_view n, std::unique_ptr<ASTNode> e) : name(n), expr(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "Assign(" << std::string(name) << ")\n";
         expr->print(indent + 2);
@@ -146,8 +146,8 @@ struct AssignNode : public ASTNode {
 };
 
 struct PrintNode : public ASTNode {
-    std::shared_ptr<ASTNode> expr; 
-    PrintNode(std::shared_ptr<ASTNode> e) : expr(e) {}
+    std::unique_ptr<ASTNode> expr; 
+    PrintNode(std::unique_ptr<ASTNode> e) : expr(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "PrintStmt\n";
         expr->print(indent + 2);
@@ -155,7 +155,7 @@ struct PrintNode : public ASTNode {
 };
 
 struct BlockNode : public ASTNode {
-    std::vector<std::shared_ptr<ASTNode>> statements;
+    std::vector<std::unique_ptr<ASTNode>> statements;
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "Block:\n";
         for (auto& stmt : statements) stmt->print(indent + 2);
@@ -163,9 +163,9 @@ struct BlockNode : public ASTNode {
 };
 
 struct IfNode : public ASTNode {
-    std::shared_ptr<ASTNode> condition, thenBranch, elseBranch;
-    IfNode(std::shared_ptr<ASTNode> c, std::shared_ptr<ASTNode> t, std::shared_ptr<ASTNode> e) 
-        : condition(c), thenBranch(t), elseBranch(e) {}
+    std::unique_ptr<ASTNode> condition, thenBranch, elseBranch;
+    IfNode(std::unique_ptr<ASTNode> c, std::unique_ptr<ASTNode> t, std::unique_ptr<ASTNode> e) 
+        : condition(std::move(c)), thenBranch(std::move(t)), elseBranch(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "If:\n";
         condition->print(indent + 4);
@@ -175,8 +175,8 @@ struct IfNode : public ASTNode {
 };
 
 struct WhileNode : public ASTNode {
-    std::shared_ptr<ASTNode> condition, body;
-    WhileNode(std::shared_ptr<ASTNode> c, std::shared_ptr<ASTNode> b) : condition(c), body(b) {}
+    std::unique_ptr<ASTNode> condition, body;
+    WhileNode(std::unique_ptr<ASTNode> c, std::unique_ptr<ASTNode> b) : condition(std::move(c)), body(std::move(b)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "While:\n";
         condition->print(indent + 4);
@@ -185,7 +185,7 @@ struct WhileNode : public ASTNode {
 };
 
 struct ProgramNode : public ASTNode { 
-    std::vector<std::shared_ptr<ASTNode>> statements; 
+    std::vector<std::unique_ptr<ASTNode>> statements; 
     void print(int indent) override {
         for (auto& stmt : statements) stmt->print(indent + 2);
     }
@@ -204,16 +204,16 @@ class Parser {
 public:
     Parser(std::string_view src) : lexer(src) { advance(); }
 
-    std::shared_ptr<ASTNode> parseFactor() {
+    std::unique_ptr<ASTNode> parseFactor() {
         if (current.type == T_NUM || current.type == T_TRUE || current.type == T_FALSE) {
-            auto node = std::make_shared<NumNode>(current.value);
+            auto node = std::make_unique<NumNode>(current.value);
             advance(); return node;
         }
         if (current.type == T_INPUT) {
-            advance(); return std::make_shared<InputNode>();
+            advance(); return std::make_unique<InputNode>();
         }
         if (current.type == T_ID) {
-            auto node = std::make_shared<VarNode>(current.text);
+            auto node = std::make_unique<VarNode>(current.text);
             advance(); return node;
         }
         if (current.type == T_LPAREN) {
@@ -223,36 +223,36 @@ public:
         throw std::runtime_error("Parse Error: Unexpected token at line " + std::to_string(current.line));
     }
 
-    std::shared_ptr<ASTNode> parseTerm() {
+    std::unique_ptr<ASTNode> parseTerm() {
         auto left = parseFactor();
         while (current.type == T_MUL || current.type == T_DIV) {
             std::string_view op = (current.type == T_MUL) ? "*" : "/";
-            advance(); left = std::make_shared<BinOpNode>(op, left, parseFactor());
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseFactor());
         }
         return left;
     }
 
-    std::shared_ptr<ASTNode> parseMath() {
+    std::unique_ptr<ASTNode> parseMath() {
         auto left = parseTerm();
         while (current.type == T_PLUS || current.type == T_MINUS) {
             std::string_view op = (current.type == T_PLUS) ? "+" : "-";
-            advance(); left = std::make_shared<BinOpNode>(op, left, parseTerm());
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseTerm());
         }
         return left;
     }
 
-    std::shared_ptr<ASTNode> parseExpression() {
+    std::unique_ptr<ASTNode> parseExpression() {
         auto left = parseMath();
         while (current.type == T_EQEQ || current.type == T_LESS) {
             std::string_view op = (current.type == T_EQEQ) ? "==" : "<";
-            advance(); left = std::make_shared<BinOpNode>(op, left, parseMath());
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseMath());
         }
         return left;
     }
 
-    std::shared_ptr<BlockNode> parseBlock() {
+    std::unique_ptr<BlockNode> parseBlock() {
         consume(T_LBRACE, "Expected '{'");
-        auto block = std::make_shared<BlockNode>();
+        auto block = std::make_unique<BlockNode>();
         while (current.type != T_RBRACE && current.type != T_EOF) {
             block->statements.push_back(parseStatement());
         }
@@ -260,39 +260,39 @@ public:
         return block;
     }
 
-    std::shared_ptr<ASTNode> parseStatement() {
+    std::unique_ptr<ASTNode> parseStatement() {
         if (current.type == T_LET) {
             advance(); std::string_view varName = current.text; consume(T_ID, "Expected variable name");
             consume(T_ASSIGN, "Expected '='"); auto expr = parseExpression();
-            consume(T_SEMI, "Expected ';'"); return std::make_shared<AssignNode>(varName, expr);
+            consume(T_SEMI, "Expected ';'"); return std::make_unique<AssignNode>(varName, std::move(expr));
         }
         if (current.type == T_PRINT) {
             advance(); auto expr = parseExpression(); consume(T_SEMI, "Expected ';'");
-            return std::make_shared<PrintNode>(expr);
+            return std::make_unique<PrintNode>(std::move(expr));
         }
         if (current.type == T_IF) {
             advance();
             consume(T_LPAREN, "Expected '(' after 'if'"); auto cond = parseExpression(); consume(T_RPAREN, "Expected ')'");
             auto thenBranch = parseBlock();
-            std::shared_ptr<ASTNode> elseBranch = nullptr;
+            std::unique_ptr<ASTNode> elseBranch = nullptr;
             if (current.type == T_ELSE) { advance(); elseBranch = parseBlock(); }
-            return std::make_shared<IfNode>(cond, thenBranch, elseBranch);
+            return std::make_unique<IfNode>(std::move(cond), std::move(thenBranch), std::move(elseBranch));
         }
         if (current.type == T_WHILE) {
             advance();
             consume(T_LPAREN, "Expected '(' after 'while'"); auto cond = parseExpression(); consume(T_RPAREN, "Expected ')'");
-            return std::make_shared<WhileNode>(cond, parseBlock());
+            return std::make_unique<WhileNode>(std::move(cond), parseBlock());
         }
         if (current.type == T_ID) {
              std::string_view varName = current.text; advance();
              consume(T_ASSIGN, "Expected '='"); auto expr = parseExpression();
-             consume(T_SEMI, "Expected ';'"); return std::make_shared<AssignNode>(varName, expr);
+             consume(T_SEMI, "Expected ';'"); return std::make_unique<AssignNode>(varName, std::move(expr));
         }
         throw std::runtime_error("Parse Error: Invalid statement at line " + std::to_string(current.line));
     }
 
-    std::shared_ptr<ProgramNode> parseProgram() {
-        auto prog = std::make_shared<ProgramNode>();
+    std::unique_ptr<ProgramNode> parseProgram() {
+        auto prog = std::make_unique<ProgramNode>();
         while (current.type != T_EOF) prog->statements.push_back(parseStatement());
         return prog;
     }
@@ -305,21 +305,23 @@ class Compiler {
 public:
     std::vector<int> bytecode;
 
-    void compile(std::shared_ptr<ASTNode> node) {
-        if (auto n = std::dynamic_pointer_cast<NumNode>(node)) {
+    void compile(const ASTNode* node) {
+        if (!node) return;
+
+        if (auto n = dynamic_cast<const NumNode*>(node)) {
             bytecode.push_back(OP_PUSH); bytecode.push_back(n->value);
         } 
-        else if (auto v = std::dynamic_pointer_cast<VarNode>(node)) {
+        else if (auto v = dynamic_cast<const VarNode*>(node)) {
             if (varMap.find(v->name) == varMap.end()) [[unlikely]] {
                 throw std::runtime_error("Compile Error: Usage of undefined variable");
             }
             bytecode.push_back(OP_GET_VAR); bytecode.push_back(varMap[v->name]);
         }
-        else if (std::dynamic_pointer_cast<InputNode>(node)) {
+        else if (dynamic_cast<const InputNode*>(node)) {
             bytecode.push_back(OP_INPUT);
         }
-        else if (auto b = std::dynamic_pointer_cast<BinOpNode>(node)) {
-            compile(b->left); compile(b->right);
+        else if (auto b = dynamic_cast<const BinOpNode*>(node)) {
+            compile(b->left.get()); compile(b->right.get());
             if (b->op == "+") bytecode.push_back(OP_ADD);
             if (b->op == "-") bytecode.push_back(OP_SUB);
             if (b->op == "*") bytecode.push_back(OP_MUL);
@@ -327,42 +329,42 @@ public:
             if (b->op == "==") bytecode.push_back(OP_EQUAL);
             if (b->op == "<") bytecode.push_back(OP_LESS);
         } 
-        else if (auto a = std::dynamic_pointer_cast<AssignNode>(node)) {
-            compile(a->expr);
+        else if (auto a = dynamic_cast<const AssignNode*>(node)) {
+            compile(a->expr.get());
             if (varMap.find(a->name) == varMap.end()) [[unlikely]] {
                 if (varCount >= 256) throw std::runtime_error("Compile Error: Maximum variable limit exceeded");
                 varMap[a->name] = varCount++;
             }
             bytecode.push_back(OP_SET_VAR); bytecode.push_back(varMap[a->name]);
         }
-        else if (auto p = std::dynamic_pointer_cast<PrintNode>(node)) {
-            compile(p->expr); bytecode.push_back(OP_PRINT);
+        else if (auto p = dynamic_cast<const PrintNode*>(node)) {
+            compile(p->expr.get()); bytecode.push_back(OP_PRINT);
         }
-        else if (auto blk = std::dynamic_pointer_cast<BlockNode>(node)) {
-            for (auto& stmt : blk->statements) compile(stmt);
+        else if (auto blk = dynamic_cast<const BlockNode*>(node)) {
+            for (auto& stmt : blk->statements) compile(stmt.get());
         }
-        else if (auto ifN = std::dynamic_pointer_cast<IfNode>(node)) {
-            compile(ifN->condition);
+        else if (auto ifN = dynamic_cast<const IfNode*>(node)) {
+            compile(ifN->condition.get());
             bytecode.push_back(OP_JUMP_IF_FALSE);
             int jumpFalseIdx = bytecode.size(); bytecode.push_back(0); 
-            compile(ifN->thenBranch);
+            compile(ifN->thenBranch.get());
             bytecode.push_back(OP_JUMP);
             int jumpEndIdx = bytecode.size(); bytecode.push_back(0); 
             bytecode[jumpFalseIdx] = bytecode.size(); 
-            if (ifN->elseBranch) compile(ifN->elseBranch);
+            if (ifN->elseBranch) compile(ifN->elseBranch.get());
             bytecode[jumpEndIdx] = bytecode.size();   
         }
-        else if (auto whl = std::dynamic_pointer_cast<WhileNode>(node)) {
+        else if (auto whl = dynamic_cast<const WhileNode*>(node)) {
             int loopStart = bytecode.size();
-            compile(whl->condition);
+            compile(whl->condition.get());
             bytecode.push_back(OP_JUMP_IF_FALSE);
             int jumpEndIdx = bytecode.size(); bytecode.push_back(0); 
-            compile(whl->body);
+            compile(whl->body.get());
             bytecode.push_back(OP_JUMP); bytecode.push_back(loopStart);
             bytecode[jumpEndIdx] = bytecode.size(); 
         }
-        else if (auto prog = std::dynamic_pointer_cast<ProgramNode>(node)) {
-            for (auto& stmt : prog->statements) compile(stmt);
+        else if (auto prog = dynamic_cast<const ProgramNode*>(node)) {
+            for (auto& stmt : prog->statements) compile(stmt.get());
             bytecode.push_back(OP_HALT);
         }
     }
@@ -405,14 +407,11 @@ public:
     do_OP_PUSH:
         push(bytecode[ip++]); DISPATCH();
     do_OP_ADD: {
-        int b = pop(); int a = pop(); push(a + b); DISPATCH();
-    }
+        int b = pop(); int a = pop(); push(a + b); DISPATCH(); }
     do_OP_SUB: {
-        int b = pop(); int a = pop(); push(a - b); DISPATCH();
-    }
+        int b = pop(); int a = pop(); push(a - b); DISPATCH(); }
     do_OP_MUL: {
-        int b = pop(); int a = pop(); push(a * b); DISPATCH();
-    }
+        int b = pop(); int a = pop(); push(a * b); DISPATCH(); }
     do_OP_DIV: {
         int b = pop(); int a = pop(); 
         if (b == 0) [[unlikely]] throw std::runtime_error("VM Error: Division by zero");
@@ -472,7 +471,7 @@ int main(int argc, char* argv[]) {
 
         auto startCompile = std::chrono::high_resolution_clock::now();
         Compiler compiler;
-        compiler.compile(ast);
+        compiler.compile(ast.get());
         auto endCompile = std::chrono::high_resolution_clock::now();
 
         if (showBytecode) {
