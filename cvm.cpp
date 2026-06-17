@@ -106,30 +106,64 @@ public:
     }
 };
 
-struct ASTNode { 
+enum class ASTNodeType {
+    Program, Block, Num, Var, Assign, Input, BinOp, UnaryOp, Print, If, While
+};
+
+struct ASTArena {
+    static constexpr size_t SIZE = 64 * 1024 * 1024; // 64 MB buffer for AST allocations
+    inline static char buffer[SIZE];
+    inline static size_t offset = 0;
+
+    static void* allocate(size_t size) {
+        size = (size + 7) & ~7; // 8-byte alignment
+        if (offset + size > SIZE) [[unlikely]] {
+            throw std::bad_alloc();
+        }
+        void* ptr = &buffer[offset];
+        offset += size;
+        return ptr;
+    }
+
+    static void reset() {
+        offset = 0;
+    }
+};
+
+struct ASTNode {
+    ASTNodeType type;
+    ASTNode(ASTNodeType t) : type(t) {}
     virtual void print(int indent) = 0;
-    virtual ~ASTNode() = default; 
+    virtual ~ASTNode() = default;
+
+    static void* operator new(size_t size) {
+        return ASTArena::allocate(size);
+    }
+    static void operator delete(void* ptr) noexcept {
+        // Managed by ASTArena::reset()
+    }
 };
 
 struct NumNode : public ASTNode { 
     int value; 
-    NumNode(int v) : value(v) {} 
+    NumNode(int v) : ASTNode(ASTNodeType::Num), value(v) {} 
     void print(int indent) override { std::cout << std::string(indent, ' ') << "Num(" << value << ")\n"; }
 };
 
 struct VarNode : public ASTNode { 
     std::string_view name; 
-    VarNode(std::string_view n) : name(n) {} 
+    VarNode(std::string_view n) : ASTNode(ASTNodeType::Var), name(n) {} 
     void print(int indent) override { std::cout << std::string(indent, ' ') << "VarLoad(" << std::string(name) << ")\n"; }
 };
 
 struct InputNode : public ASTNode {
+    InputNode() : ASTNode(ASTNodeType::Input) {}
     void print(int indent) override { std::cout << std::string(indent, ' ') << "Input()\n"; }
 };
 
 struct UnaryOpNode : public ASTNode {
     char op; std::unique_ptr<ASTNode> expr;
-    UnaryOpNode(char o, std::unique_ptr<ASTNode> e) : op(o), expr(std::move(e)) {}
+    UnaryOpNode(char o, std::unique_ptr<ASTNode> e) : ASTNode(ASTNodeType::UnaryOp), op(o), expr(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "UnaryOp(" << op << ")\n";
         expr->print(indent + 2);
@@ -138,7 +172,7 @@ struct UnaryOpNode : public ASTNode {
 
 struct BinOpNode : public ASTNode {
     std::string_view op; std::unique_ptr<ASTNode> left, right;
-    BinOpNode(std::string_view o, std::unique_ptr<ASTNode> l, std::unique_ptr<ASTNode> r) : op(o), left(std::move(l)), right(std::move(r)) {}
+    BinOpNode(std::string_view o, std::unique_ptr<ASTNode> l, std::unique_ptr<ASTNode> r) : ASTNode(ASTNodeType::BinOp), op(o), left(std::move(l)), right(std::move(r)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "BinOp(" << std::string(op) << ")\n";
         left->print(indent + 2);
@@ -148,7 +182,7 @@ struct BinOpNode : public ASTNode {
 
 struct AssignNode : public ASTNode {
     std::string_view name; std::unique_ptr<ASTNode> expr;
-    AssignNode(std::string_view n, std::unique_ptr<ASTNode> e) : name(n), expr(std::move(e)) {}
+    AssignNode(std::string_view n, std::unique_ptr<ASTNode> e) : ASTNode(ASTNodeType::Assign), name(n), expr(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "Assign(" << std::string(name) << ")\n";
         expr->print(indent + 2);
@@ -157,7 +191,7 @@ struct AssignNode : public ASTNode {
 
 struct PrintNode : public ASTNode {
     std::unique_ptr<ASTNode> expr; 
-    PrintNode(std::unique_ptr<ASTNode> e) : expr(std::move(e)) {}
+    PrintNode(std::unique_ptr<ASTNode> e) : ASTNode(ASTNodeType::Print), expr(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "PrintStmt\n";
         expr->print(indent + 2);
@@ -166,6 +200,7 @@ struct PrintNode : public ASTNode {
 
 struct BlockNode : public ASTNode {
     std::vector<std::unique_ptr<ASTNode>> statements;
+    BlockNode() : ASTNode(ASTNodeType::Block) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "Block:\n";
         for (auto& stmt : statements) stmt->print(indent + 2);
@@ -175,7 +210,7 @@ struct BlockNode : public ASTNode {
 struct IfNode : public ASTNode {
     std::unique_ptr<ASTNode> condition, thenBranch, elseBranch;
     IfNode(std::unique_ptr<ASTNode> c, std::unique_ptr<ASTNode> t, std::unique_ptr<ASTNode> e) 
-        : condition(std::move(c)), thenBranch(std::move(t)), elseBranch(std::move(e)) {}
+        : ASTNode(ASTNodeType::If), condition(std::move(c)), thenBranch(std::move(t)), elseBranch(std::move(e)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "If:\n";
         condition->print(indent + 4);
@@ -186,7 +221,7 @@ struct IfNode : public ASTNode {
 
 struct WhileNode : public ASTNode {
     std::unique_ptr<ASTNode> condition, body;
-    WhileNode(std::unique_ptr<ASTNode> c, std::unique_ptr<ASTNode> b) : condition(std::move(c)), body(std::move(b)) {}
+    WhileNode(std::unique_ptr<ASTNode> c, std::unique_ptr<ASTNode> b) : ASTNode(ASTNodeType::While), condition(std::move(c)), body(std::move(b)) {}
     void print(int indent) override {
         std::cout << std::string(indent, ' ') << "While:\n";
         condition->print(indent + 4);
@@ -196,14 +231,19 @@ struct WhileNode : public ASTNode {
 
 struct ProgramNode : public ASTNode { 
     std::vector<std::unique_ptr<ASTNode>> statements; 
+    ProgramNode() : ASTNode(ASTNodeType::Program) {}
     void print(int indent) override {
         for (auto& stmt : statements) stmt->print(indent + 2);
     }
 };
 
 class Parser {
-    Lexer lexer; Token current;
+    Lexer lexer;
+    Token current;
+
+    // --- Category A: Utilities & Helpers (Private) ---
     void advance() { current = lexer.nextToken(); }
+    
     void consume(TokenType type, std::string_view errMsg) {
         if (current.type == type) [[likely]] advance();
         else [[unlikely]] { 
@@ -212,69 +252,14 @@ class Parser {
     }
 
 public:
+    // --- Constructor ---
     Parser(std::string_view src) : lexer(src) { advance(); }
 
-    std::unique_ptr<ASTNode> parseFactor() {
-        if (current.type == T_NUM || current.type == T_TRUE || current.type == T_FALSE) {
-            auto node = std::make_unique<NumNode>(current.value);
-            advance(); return node;
-        }
-        if (current.type == T_INPUT) {
-            advance(); return std::make_unique<InputNode>();
-        }
-        if (current.type == T_ID) {
-            auto node = std::make_unique<VarNode>(current.text);
-            advance(); return node;
-        }
-        if (current.type == T_LPAREN) {
-            advance(); auto node = parseExpression();
-            consume(T_RPAREN, "Expected ')'"); return node;
-        }
-        throw std::runtime_error("Parse Error: Unexpected token at line " + std::to_string(current.line));
-    }
-
-    std::unique_ptr<ASTNode> parseUnary() {
-        if (current.type == T_MINUS) {
-            advance(); return std::make_unique<UnaryOpNode>('-', parseUnary());
-        }
-        return parseFactor();
-    }
-
-    std::unique_ptr<ASTNode> parseTerm() {
-        auto left = parseUnary();
-        while (current.type == T_MUL || current.type == T_DIV) {
-            std::string_view op = (current.type == T_MUL) ? "*" : "/";
-            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseUnary());
-        }
-        return left;
-    }
-
-    std::unique_ptr<ASTNode> parseMath() {
-        auto left = parseTerm();
-        while (current.type == T_PLUS || current.type == T_MINUS) {
-            std::string_view op = (current.type == T_PLUS) ? "+" : "-";
-            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseTerm());
-        }
-        return left;
-    }
-
-    std::unique_ptr<ASTNode> parseExpression() {
-        auto left = parseMath();
-        while (current.type == T_EQEQ || current.type == T_LESS) {
-            std::string_view op = (current.type == T_EQEQ) ? "==" : "<";
-            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseMath());
-        }
-        return left;
-    }
-
-    std::unique_ptr<BlockNode> parseBlock() {
-        consume(T_LBRACE, "Expected '{'");
-        auto block = std::make_unique<BlockNode>();
-        while (current.type != T_RBRACE && current.type != T_EOF) {
-            block->statements.push_back(parseStatement());
-        }
-        consume(T_RBRACE, "Expected '}'");
-        return block;
+    // --- Category B: Program & Statement Structure (Top-Down) ---
+    std::unique_ptr<ProgramNode> parseProgram() {
+        auto prog = std::make_unique<ProgramNode>();
+        while (current.type != T_EOF) prog->statements.push_back(parseStatement());
+        return prog;
     }
 
     std::unique_ptr<ASTNode> parseStatement() {
@@ -308,10 +293,68 @@ public:
         throw std::runtime_error("Parse Error: Invalid statement at line " + std::to_string(current.line));
     }
 
-    std::unique_ptr<ProgramNode> parseProgram() {
-        auto prog = std::make_unique<ProgramNode>();
-        while (current.type != T_EOF) prog->statements.push_back(parseStatement());
-        return prog;
+    std::unique_ptr<BlockNode> parseBlock() {
+        consume(T_LBRACE, "Expected '{'");
+        auto block = std::make_unique<BlockNode>();
+        while (current.type != T_RBRACE && current.type != T_EOF) {
+            block->statements.push_back(parseStatement());
+        }
+        consume(T_RBRACE, "Expected '}'");
+        return block;
+    }
+
+    // --- Category C: Expression Precedence Chain (Top-Down) ---
+    std::unique_ptr<ASTNode> parseExpression() {
+        auto left = parseMath();
+        while (current.type == T_EQEQ || current.type == T_LESS) {
+            std::string_view op = (current.type == T_EQEQ) ? "==" : "<";
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseMath());
+        }
+        return left;
+    }
+
+    std::unique_ptr<ASTNode> parseMath() {
+        auto left = parseTerm();
+        while (current.type == T_PLUS || current.type == T_MINUS) {
+            std::string_view op = (current.type == T_PLUS) ? "+" : "-";
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseTerm());
+        }
+        return left;
+    }
+
+    std::unique_ptr<ASTNode> parseTerm() {
+        auto left = parseUnary();
+        while (current.type == T_MUL || current.type == T_DIV) {
+            std::string_view op = (current.type == T_MUL) ? "*" : "/";
+            advance(); left = std::make_unique<BinOpNode>(op, std::move(left), parseUnary());
+        }
+        return left;
+    }
+
+    std::unique_ptr<ASTNode> parseUnary() {
+        if (current.type == T_MINUS) {
+            advance(); return std::make_unique<UnaryOpNode>('-', parseUnary());
+        }
+        return parseFactor();
+    }
+
+    std::unique_ptr<ASTNode> parseFactor() {
+        if (current.type == T_NUM || current.type == T_TRUE || current.type == T_FALSE) {
+            auto node = std::make_unique<NumNode>(current.value);
+            advance(); return node;
+        }
+        if (current.type == T_INPUT) {
+            advance(); return std::make_unique<InputNode>();
+        }
+        if (current.type == T_ID) {
+            auto node = std::make_unique<VarNode>(current.text);
+            advance(); return node;
+        }
+        if (current.type == T_LPAREN) {
+            advance(); auto node = parseExpression();
+            consume(T_RPAREN, "Expected ')'"); return node;
+        }
+        throw std::runtime_error("Parse Error: Unexpected token at line " + std::to_string(current.line));
     }
 };
 
@@ -325,68 +368,100 @@ public:
     void compile(const ASTNode* node) {
         if (!node) return;
 
-        if (auto n = dynamic_cast<const NumNode*>(node)) {
-            bytecode.push_back(OP_PUSH); bytecode.push_back(n->value);
-        } 
-        else if (auto v = dynamic_cast<const VarNode*>(node)) {
-            if (varMap.find(v->name) == varMap.end()) [[unlikely]] {
-                throw std::runtime_error("Compile Error: Usage of undefined variable");
+        switch (node->type) {
+            // --- Category A: Structure & Flow (Scope Wrappers) ---
+            case ASTNodeType::Program: {
+                auto prog = static_cast<const ProgramNode*>(node);
+                for (auto& stmt : prog->statements) compile(stmt.get());
+                bytecode.push_back(OP_HALT);
+                break;
             }
-            bytecode.push_back(OP_GET_VAR); bytecode.push_back(varMap[v->name]);
-        }
-        else if (dynamic_cast<const InputNode*>(node)) {
-            bytecode.push_back(OP_INPUT);
-        }
-        else if (auto u = dynamic_cast<const UnaryOpNode*>(node)) {
-            compile(u->expr.get());
-            if (u->op == '-') bytecode.push_back(OP_NEG);
-        }
-        else if (auto b = dynamic_cast<const BinOpNode*>(node)) {
-            compile(b->left.get()); compile(b->right.get());
-            if (b->op == "+") bytecode.push_back(OP_ADD);
-            if (b->op == "-") bytecode.push_back(OP_SUB);
-            if (b->op == "*") bytecode.push_back(OP_MUL);
-            if (b->op == "/") bytecode.push_back(OP_DIV);
-            if (b->op == "==") bytecode.push_back(OP_EQUAL);
-            if (b->op == "<") bytecode.push_back(OP_LESS);
-        } 
-        else if (auto a = dynamic_cast<const AssignNode*>(node)) {
-            compile(a->expr.get());
-            if (varMap.find(a->name) == varMap.end()) [[unlikely]] {
-                if (varCount >= 256) throw std::runtime_error("Compile Error: Maximum variable limit exceeded");
-                varMap[a->name] = varCount++;
+            case ASTNodeType::Block: {
+                auto blk = static_cast<const BlockNode*>(node);
+                for (auto& stmt : blk->statements) compile(stmt.get());
+                break;
             }
-            bytecode.push_back(OP_SET_VAR); bytecode.push_back(varMap[a->name]);
-        }
-        else if (auto p = dynamic_cast<const PrintNode*>(node)) {
-            compile(p->expr.get()); bytecode.push_back(OP_PRINT);
-        }
-        else if (auto blk = dynamic_cast<const BlockNode*>(node)) {
-            for (auto& stmt : blk->statements) compile(stmt.get());
-        }
-        else if (auto ifN = dynamic_cast<const IfNode*>(node)) {
-            compile(ifN->condition.get());
-            bytecode.push_back(OP_JUMP_IF_FALSE);
-            int jumpFalseIdx = bytecode.size(); bytecode.push_back(0); 
-            compile(ifN->thenBranch.get());
-            bytecode.push_back(OP_JUMP);
-            int jumpEndIdx = bytecode.size(); bytecode.push_back(0); 
-            bytecode[jumpFalseIdx] = bytecode.size(); 
-            if (ifN->elseBranch) compile(ifN->elseBranch.get());
-            bytecode[jumpEndIdx] = bytecode.size();   
-        }
-        else if (auto whl = dynamic_cast<const WhileNode*>(node)) {
-            int loopStart = bytecode.size();
-            compile(whl->condition.get());
-            bytecode.push_back(OP_JUMP_IF_FALSE);
-            int jumpEndIdx = bytecode.size(); bytecode.push_back(0); 
-            compile(whl->body.get());
-            bytecode.push_back(OP_JUMP); bytecode.push_back(loopStart);
-            bytecode[jumpEndIdx] = bytecode.size(); 
-        }
-        else if (auto prog = dynamic_cast<const ProgramNode*>(node)) {
-            for (auto& stmt : prog->statements) compile(stmt.get());
-            bytecode.push_back(OP_HALT);
+
+            // --- Category B: Values & Variables (Identifiers & Literals) ---
+            case ASTNodeType::Num: {
+                auto n = static_cast<const NumNode*>(node);
+                bytecode.push_back(OP_PUSH); bytecode.push_back(n->value);
+                break;
+            }
+            case ASTNodeType::Var: {
+                auto v = static_cast<const VarNode*>(node);
+                if (varMap.find(v->name) == varMap.end()) [[unlikely]] {
+                    throw std::runtime_error("Compile Error: Usage of undefined variable");
+                }
+                bytecode.push_back(OP_GET_VAR); bytecode.push_back(varMap[v->name]);
+                break;
+            }
+            case ASTNodeType::Assign: {
+                auto a = static_cast<const AssignNode*>(node);
+                compile(a->expr.get());
+                if (varMap.find(a->name) == varMap.end()) [[unlikely]] {
+                    if (varCount >= 256) throw std::runtime_error("Compile Error: Maximum variable limit exceeded");
+                    varMap[a->name] = varCount++;
+                }
+                bytecode.push_back(OP_SET_VAR); bytecode.push_back(varMap[a->name]);
+                break;
+            }
+            case ASTNodeType::Input: {
+                bytecode.push_back(OP_INPUT);
+                break;
+            }
+
+            // --- Category C: Expressions & Operations (Math & Logic) ---
+            case ASTNodeType::BinOp: {
+                auto b = static_cast<const BinOpNode*>(node);
+                compile(b->left.get()); compile(b->right.get());
+                if (b->op == "+") bytecode.push_back(OP_ADD);
+                if (b->op == "-") bytecode.push_back(OP_SUB);
+                if (b->op == "*") bytecode.push_back(OP_MUL);
+                if (b->op == "/") bytecode.push_back(OP_DIV);
+                if (b->op == "==") bytecode.push_back(OP_EQUAL);
+                if (b->op == "<") bytecode.push_back(OP_LESS);
+                break;
+            }
+            case ASTNodeType::UnaryOp: {
+                auto u = static_cast<const UnaryOpNode*>(node);
+                compile(u->expr.get());
+                if (u->op == '-') bytecode.push_back(OP_NEG);
+                break;
+            }
+
+            // --- Category D: Output Execution ---
+            case ASTNodeType::Print: {
+                auto p = static_cast<const PrintNode*>(node);
+                compile(p->expr.get()); bytecode.push_back(OP_PRINT);
+                break;
+            }
+
+            // --- Category E: Conditional Jump Controls (The Jump Engines) ---
+            case ASTNodeType::If: {
+                auto ifN = static_cast<const IfNode*>(node);
+                compile(ifN->condition.get());
+                bytecode.push_back(OP_JUMP_IF_FALSE);
+                int jumpFalseIdx = bytecode.size(); bytecode.push_back(0); 
+                compile(ifN->thenBranch.get());
+                bytecode.push_back(OP_JUMP);
+                int jumpEndIdx = bytecode.size(); bytecode.push_back(0); 
+                bytecode[jumpFalseIdx] = bytecode.size(); 
+                if (ifN->elseBranch) compile(ifN->elseBranch.get());
+                bytecode[jumpEndIdx] = bytecode.size();   
+                break;
+            }
+            case ASTNodeType::While: {
+                auto whl = static_cast<const WhileNode*>(node);
+                int loopStart = bytecode.size();
+                compile(whl->condition.get());
+                bytecode.push_back(OP_JUMP_IF_FALSE);
+                int jumpEndIdx = bytecode.size(); bytecode.push_back(0); 
+                compile(whl->body.get());
+                bytecode.push_back(OP_JUMP); bytecode.push_back(loopStart);
+                bytecode[jumpEndIdx] = bytecode.size(); 
+                break;
+            }
         }
     }
 };
@@ -397,21 +472,16 @@ class VM {
     int stackTopIdx = 0;
     std::array<int, 256> globals;
 
-    inline void push(int val) { 
-        if (stackTopIdx >= 256) [[unlikely]] throw std::runtime_error("VM Error: Stack Overflow");
-        stack[stackTopIdx++] = val; 
-    }
-    inline int pop() { 
-        if (stackTopIdx <= 0) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
-        return stack[--stackTopIdx]; 
-    }
-
 public:
     VM(std::vector<int> code) : bytecode(code) {}
 
     void run() {
         std::cout << "--- VM Execution Output ---\n";
-        size_t ip = 0; 
+        if (bytecode.empty()) return;
+
+        const int* raw_ip = bytecode.data();
+        int* raw_stack = stack.data();
+        int* raw_globals = globals.data();
 
         // Computed Gotos / Direct Threading
         static void* dispatch_table[] = {
@@ -421,47 +491,78 @@ public:
             &&do_OP_NEG, &&do_OP_HALT
         };
 
-        #define DISPATCH() goto *dispatch_table[bytecode[ip++]]
+        #define DISPATCH() goto *dispatch_table[*raw_ip++]
 
-        if (bytecode.empty()) return;
         DISPATCH();
 
     do_OP_PUSH:
-        push(bytecode[ip++]); DISPATCH();
-    do_OP_ADD: {
-        int b = pop(); int a = pop(); push(a + b); DISPATCH(); }
-    do_OP_SUB: {
-        int b = pop(); int a = pop(); push(a - b); DISPATCH(); }
-    do_OP_MUL: {
-        int b = pop(); int a = pop(); push(a * b); DISPATCH(); }
+        if (stackTopIdx >= 256) [[unlikely]] throw std::runtime_error("VM Error: Stack Overflow");
+        raw_stack[stackTopIdx++] = *raw_ip++;
+        DISPATCH();
+    do_OP_ADD:
+        if (stackTopIdx < 2) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        stackTopIdx--;
+        raw_stack[stackTopIdx - 1] += raw_stack[stackTopIdx];
+        DISPATCH();
+    do_OP_SUB:
+        if (stackTopIdx < 2) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        stackTopIdx--;
+        raw_stack[stackTopIdx - 1] -= raw_stack[stackTopIdx];
+        DISPATCH();
+    do_OP_MUL:
+        if (stackTopIdx < 2) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        stackTopIdx--;
+        raw_stack[stackTopIdx - 1] *= raw_stack[stackTopIdx];
+        DISPATCH();
     do_OP_DIV: {
-        int b = pop(); int a = pop(); 
-        if (b == 0) [[unlikely]] throw std::runtime_error("VM Error: Division by zero");
-        push(a / b); DISPATCH();
+        if (stackTopIdx < 2) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        stackTopIdx--;
+        int divisor = raw_stack[stackTopIdx];
+        if (divisor == 0) [[unlikely]] throw std::runtime_error("VM Error: Division by zero");
+        raw_stack[stackTopIdx - 1] /= divisor;
+        DISPATCH();
     }
-    do_OP_EQUAL: {
-        int b = pop(); int a = pop(); push(a == b ? 1 : 0); DISPATCH();
-    }
-    do_OP_LESS: {
-        int b = pop(); int a = pop(); push(a < b ? 1 : 0); DISPATCH();
-    }
+    do_OP_EQUAL:
+        if (stackTopIdx < 2) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        stackTopIdx--;
+        raw_stack[stackTopIdx - 1] = (raw_stack[stackTopIdx - 1] == raw_stack[stackTopIdx]) ? 1 : 0;
+        DISPATCH();
+    do_OP_LESS:
+        if (stackTopIdx < 2) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        stackTopIdx--;
+        raw_stack[stackTopIdx - 1] = (raw_stack[stackTopIdx - 1] < raw_stack[stackTopIdx]) ? 1 : 0;
+        DISPATCH();
     do_OP_SET_VAR:
-        globals[bytecode[ip++]] = pop(); DISPATCH();
+        if (stackTopIdx < 1) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        raw_globals[*raw_ip++] = raw_stack[--stackTopIdx];
+        DISPATCH();
     do_OP_GET_VAR:
-        push(globals[bytecode[ip++]]); DISPATCH();
+        if (stackTopIdx >= 256) [[unlikely]] throw std::runtime_error("VM Error: Stack Overflow");
+        raw_stack[stackTopIdx++] = raw_globals[*raw_ip++];
+        DISPATCH();
     do_OP_JUMP_IF_FALSE: {
-        int target = bytecode[ip++]; if (pop() == 0) ip = target; DISPATCH();
+        if (stackTopIdx < 1) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        int target = *raw_ip++;
+        if (raw_stack[--stackTopIdx] == 0) raw_ip = bytecode.data() + target;
+        DISPATCH();
     }
-    do_OP_JUMP: {
-        ip = bytecode[ip++]; DISPATCH();
-    }
+    do_OP_JUMP:
+        raw_ip = bytecode.data() + *raw_ip;
+        DISPATCH();
     do_OP_INPUT: {
-        int val; std::cout << "Input required: "; std::cin >> val; push(val); DISPATCH();
+        if (stackTopIdx >= 256) [[unlikely]] throw std::runtime_error("VM Error: Stack Overflow");
+        int val; std::cout << "Input required: "; std::cin >> val;
+        raw_stack[stackTopIdx++] = val;
+        DISPATCH();
     }
     do_OP_PRINT:
-        std::cout << "> " << pop() << std::endl; DISPATCH();
+        if (stackTopIdx < 1) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        std::cout << "> " << raw_stack[--stackTopIdx] << std::endl;
+        DISPATCH();
     do_OP_NEG:
-        stack[stackTopIdx - 1] = -stack[stackTopIdx - 1]; DISPATCH();
+        if (stackTopIdx < 1) [[unlikely]] throw std::runtime_error("VM Error: Stack Underflow");
+        raw_stack[stackTopIdx - 1] = -raw_stack[stackTopIdx - 1];
+        DISPATCH();
     do_OP_HALT:
         return;
     }
@@ -497,6 +598,10 @@ int main(int argc, char* argv[]) {
         Compiler compiler;
         compiler.compile(ast.get());
         auto endCompile = std::chrono::high_resolution_clock::now();
+
+        // Release AST memory and reset the compiler allocation arena
+        ast.reset();
+        ASTArena::reset();
 
         if (showBytecode) {
             std::cout << "--- Printing Compiled Bytecode ---\n";
