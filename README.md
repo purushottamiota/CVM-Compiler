@@ -4,7 +4,7 @@ CVM++ is a custom interpreter, bytecode compiler, and virtual machine written en
 
 ## Performance & Safety Architecture
 
-The CVM is engineered for maximum performance while maintaining strict runtime safety bounds. It achieves **>440M ops/sec** with **~2.2ns latency per opcode**:
+The CVM is engineered for maximum performance while maintaining strict runtime safety bounds. It achieves **~470M ops/sec** with **~2.12ns latency per opcode**:
 
 - **Direct Threading (Computed Gotos):** Replaces the standard VM switch-dispatch loop with an array of memory addresses, eliminating dispatch branch mispredictions and drastically improving pipeline throughput.
 - **C++20 Branch Predictor Hints (`[[likely]]`/`[[unlikely]]`):** VM stack bounds and division-by-zero checks are evaluated without stalling the CPU pipeline.
