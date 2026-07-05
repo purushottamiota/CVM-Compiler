@@ -33,9 +33,9 @@ enum TokenType {
 
 // Creating a struct to hold token information
 struct Token {
+    std::string_view text;
     TokenType type;
     int value; 
-    std::string_view text;
     int line;
 };
 
